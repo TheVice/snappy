@@ -44,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        compiler: [clang, gcc, msvc]
+        compiler: [clang, gcc, msvc, mingw]
         os: [ubuntu-latest, macos-latest, windows-latest]
         cpu_level: [baseline, avx, avx2]
         optimized: [true, false]
@@ -93,6 +93,7 @@ jobs:
         startsWith(matrix.os, 'windows') && '{0}\build\{1}\' || '{0}/build/',
         github.workspace,
         matrix.optimized && 'RelWithDebInfo' || 'Debug') }}
+      GENERATOR: ${{ matrix.compiler == 'mingw' && '-G "MinGW Makefiles"' || '' }}
 
     steps:
     - uses: actions/checkout@v2
@@ -107,11 +108,19 @@ jobs:
         -DSNAPPY_FUZZING_BUILD=${{ env.SNAPPY_FUZZING_BUILD }}
         -DSNAPPY_REQUIRE_AVX=${{ env.SNAPPY_REQUIRE_AVX }}
         -DSNAPPY_REQUIRE_AVX2=${{ env.SNAPPY_REQUIRE_AVX2 }}
+        ${{ env.GENERATOR }}
 
     - name: Build
       run: >-
         cmake --build "${{ env.CMAKE_BUILD_DIR }}"
         --config "${{ env.CMAKE_BUILD_TYPE }}"
+
+    - name: Copy binaries (MinGW)
+      if: ${{ matrix.compiler == 'mingw' }}
+      run: |
+        mkdir ${{ env.BINARY_PATH }}
+        copy ${{ env.CMAKE_BUILD_DIR }}/snappy_unittest${{ env.BINARY_SUFFIX }} ${{ env.BINARY_PATH }}snappy_unittest${{ env.BINARY_SUFFIX }}
+        copy ${{ env.CMAKE_BUILD_DIR }}/snappy_benchmark${{ env.BINARY_SUFFIX }} ${{ env.BINARY_PATH }}snappy_benchmark${{ env.BINARY_SUFFIX }}
 
     - name: Run C++ API Tests
       run: ${{ env.BINARY_PATH }}snappy_unittest${{ env.BINARY_SUFFIX }}
