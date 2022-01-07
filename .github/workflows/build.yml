@@ -37,51 +37,21 @@ jobs:
     name:  >-
       CI
       ${{ matrix.os }}
-      ${{ matrix.cpu_level }}
       ${{ matrix.compiler }}
-      ${{ matrix.optimized && 'release' || 'debug' }}
+      ${{ matrix.code }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        compiler: [clang, gcc, msvc]
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        cpu_level: [baseline, avx, avx2]
-        optimized: [true, false]
-        exclude:
-        # MSVC only works on Windows.
-        - os: ubuntu-latest
-          compiler: msvc
-        - os: macos-latest
-          compiler: msvc
-        # GitHub servers seem to run on pre-Haswell CPUs. Attempting to use AVX2
-        # results in crashes.
-        - os: macos-latest
-          cpu_level: avx2
-        # Not testing with GCC on macOS.
-        - os: macos-latest
-          compiler: gcc
-        # Only testing with MSVC on Windows.
-        - os: windows-latest
-          compiler: clang
-        - os: windows-latest
-          compiler: gcc
-        include:
-        - compiler: clang
-          CC: clang
-          CXX: clang++
-        - compiler: gcc
-          CC: gcc
-          CXX: g++
-        - compiler: msvc
-          CC:
-          CXX:
+        compiler: [msvc]
+        os: [windows-latest]
+        cpu_level: [baseline]
+        optimized: [true]
+        code: [unmanaged, managed]
 
     env:
       CMAKE_BUILD_DIR: ${{ github.workspace }}/build
       CMAKE_BUILD_TYPE: ${{ matrix.optimized && 'RelWithDebInfo' || 'Debug' }}
-      CC: ${{ matrix.CC }}
-      CXX: ${{ matrix.CXX }}
       SNAPPY_REQUIRE_AVX: ${{ matrix.cpu_level == 'baseline' && '0' || '1' }}
       SNAPPY_REQUIRE_AVX2: ${{ matrix.cpu_level == 'avx2' && '1' || '0' }}
       SNAPPY_FUZZING_BUILD: >-
@@ -93,6 +63,7 @@ jobs:
         startsWith(matrix.os, 'windows') && '{0}\build\{1}\' || '{0}/build/',
         github.workspace,
         matrix.optimized && 'RelWithDebInfo' || 'Debug') }}
+      SNAPPY_CLI: ${{ matrix.code == 'managed' && '1' || '0' }}
 
     steps:
     - uses: actions/checkout@v2
@@ -107,6 +78,7 @@ jobs:
         -DSNAPPY_FUZZING_BUILD=${{ env.SNAPPY_FUZZING_BUILD }}
         -DSNAPPY_REQUIRE_AVX=${{ env.SNAPPY_REQUIRE_AVX }}
         -DSNAPPY_REQUIRE_AVX2=${{ env.SNAPPY_REQUIRE_AVX2 }}
+        -DSNAPPY_CLI=${{ env.SNAPPY_CLI }}
 
     - name: Build
       run: >-

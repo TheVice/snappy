@@ -656,6 +656,24 @@ static inline char* EmitCopy(char* op, size_t offset, size_t len) {
 }
 
 bool GetUncompressedLength(const char* start, size_t n, size_t* result) {
+#if SNAPPY_CLI
+  array<System::Byte>^ start_gcnew = gcnew array<System::Byte>(n);
+
+  for (size_t i = 0; i < n; ++i)
+  {
+    start_gcnew[i] = start[i];
+  }
+
+  array<bool>^ length_data = Snappy::Varints::FromVarints(start_gcnew, n);
+
+  if (nullptr == length_data)
+  {
+    return false;
+  }
+
+  *result = Snappy::Misc::BinToUInt64(length_data);
+  return true;
+#else
   uint32_t v = 0;
   const char* limit = start + n;
   if (Varint::Parse32WithLimit(start, limit, &v) != NULL) {
@@ -664,6 +682,7 @@ bool GetUncompressedLength(const char* start, size_t n, size_t* result) {
   } else {
     return false;
   }
+#endif
 }
 
 namespace {
@@ -888,7 +907,7 @@ emit_remainder:
   return op;
 }
 }  // end namespace internal
-
+#if !defined(SNAPPY_CLI)
 // Called back at avery compression call to trace parameters and sizes.
 static inline void Report(const char *algorithm, size_t compressed_size,
                           size_t uncompressed_size) {
@@ -1486,13 +1505,80 @@ static bool InternalUncompressAllTags(SnappyDecompressor* decompressor,
   writer->Flush();
   return (decompressor->eof() && writer->CheckLength());
 }
-
+#endif
 bool GetUncompressedLength(Source* source, uint32_t* result) {
+#if SNAPPY_CLI
+  const auto available = source->Available();
+  size_t peekLen;
+  const auto peek = source->Peek(&peekLen);
+  const auto len = peekLen < available ? peekLen : available;
+
+  array<System::Byte>^ source_gcnew = gcnew array<System::Byte>(len);
+
+  for (peekLen = 0; peekLen < len; ++peekLen)
+  {
+    source_gcnew[peekLen] = peek[peekLen];
+  }
+
+  array<bool>^ length_data = Snappy::Varints::FromVarints(source_gcnew, len);
+
+  if (nullptr == length_data)
+  {
+    return false;
+  }
+
+  *result = Snappy::Misc::BinToUInt64(length_data);
+  return true;
+#else
   SnappyDecompressor decompressor(source);
   return decompressor.ReadUncompressedLength(result);
+#endif
 }
 
 size_t Compress(Source* reader, Sink* writer) {
+#if SNAPPY_CLI
+  size_t available;
+  System::Collections::Generic::List<System::Byte>^ source = gcnew System::Collections::Generic::List<System::Byte>();
+
+  while (0 < (available = reader->Available()))
+  {
+    size_t peekLen;
+    const char* peek = reader->Peek(&peekLen);
+    const size_t len = peekLen < available ? peekLen : available;
+  
+    for (available = 0; available < len; ++available)
+    {
+      source->Add(peek[available]);
+    }
+
+    reader->Skip(len);
+  }
+
+  System::IO::MemoryStream^ output_stream = gcnew System::IO::MemoryStream();
+
+  try
+  {
+    Snappy::Core::Compress(source->ToArray(), output_stream);
+  }
+  catch (System::Exception^ exc)
+  {
+    //System::Console::WriteLine("{0} {1} Exception: {2}", __FUNCTION__, __LINE__, exc->Message);
+    return 0;
+  }
+
+  source->Clear();
+  output_stream->Seek(0, System::IO::SeekOrigin::Begin);
+
+  std::string output(output_stream->Length, 0);
+
+  for (int i = 0, count = output.size(); i < count; ++i)
+  {
+    output[i] = (char)output_stream->ReadByte();
+  }
+
+  writer->Append(output.c_str(), output.size());
+  return output.size();
+#else
   size_t written = 0;
   size_t N = reader->Available();
   const size_t uncompressed_size = N;
@@ -1560,6 +1646,7 @@ size_t Compress(Source* reader, Sink* writer) {
   Report("snappy_compress", written, uncompressed_size);
 
   return written;
+#endif
 }
 
 // -----------------------------------------------------------------------
@@ -1756,10 +1843,52 @@ bool RawUncompressToIOVec(const char* compressed, size_t compressed_length,
 
 bool RawUncompressToIOVec(Source* compressed, const struct iovec* iov,
                           size_t iov_cnt) {
+#if SNAPPY_CLI
+  size_t available;
+  System::IO::MemoryStream^ source = gcnew System::IO::MemoryStream();
+
+  while (0 < (available = compressed->Available()))
+  {
+    size_t peekLen;
+    const char* peek = compressed->Peek(&peekLen);
+    const size_t len = peekLen < available ? peekLen : available;
+
+    for (available = 0; available < len; ++available)
+    {
+      source->WriteByte(peek[available]);
+    }
+
+    compressed->Skip(len);
+  }
+
+  source->Seek(0, System::IO::SeekOrigin::Begin);
+  array<System::Byte>^ uncompressed_gcnew;
+
+  try
+  {
+    uncompressed_gcnew = Snappy::Core::Uncompress(source);
+  }
+  catch (System::Exception^ exc)
+  {
+    //System::Console::WriteLine("{0} {1} Exception: {2}", __FUNCTION__, __LINE__, exc->Message);
+    return false;
+  }
+
+  std::string output_str(uncompressed_gcnew->Length, 0);
+
+  for (int i = 0, count = uncompressed_gcnew->Length; i < count; ++i)
+  {
+    output_str[i] = uncompressed_gcnew[i];
+  }
+
+  SnappyIOVecWriter output(iov, iov_cnt);
+  return output.Append(output_str.c_str(), output_str.size(), nullptr);
+#else
   SnappyIOVecWriter output(iov, iov_cnt);
   return InternalUncompress(compressed, &output);
+#endif
 }
-
+#if !defined(SNAPPY_CLI)
 // -----------------------------------------------------------------------
 // Flat array interfaces
 // -----------------------------------------------------------------------
@@ -1848,16 +1977,80 @@ class SnappyArrayWriter {
   }
   inline void Flush() {}
 };
-
+#endif
 bool RawUncompress(const char* compressed, size_t compressed_length,
                    char* uncompressed) {
+#if SNAPPY_CLI
+  try
+  {
+    array<System::Byte>^ compressed_gcnew = gcnew array<System::Byte>(compressed_length);
+
+    for (size_t i = 0; i < compressed_length; ++i)
+    {
+      compressed_gcnew[i] = compressed[i];
+    }
+
+    System::IO::MemoryStream^ input = gcnew System::IO::MemoryStream(compressed_gcnew);
+    array<System::Byte>^ uncompressed_gcnew = Snappy::Core::Uncompress(input);
+
+    for (size_t i = 0, count = uncompressed_gcnew->LongLength; i < count; ++i)
+    {
+      uncompressed[i] = uncompressed_gcnew[i];
+    }
+  }
+  catch (System::Exception^ exc)
+  {
+    //System::Console::WriteLine("{0} {1} Exception: {2}", __FUNCTION__, __LINE__, exc->Message);
+    return false;
+  }
+
+  return true;
+#else
   ByteArraySource reader(compressed, compressed_length);
   return RawUncompress(&reader, uncompressed);
+#endif
 }
 
 bool RawUncompress(Source* compressed, char* uncompressed) {
+#if SNAPPY_CLI
+  size_t available;
+  System::IO::MemoryStream^ source = gcnew System::IO::MemoryStream();
+
+  while (0 < (available = compressed->Available()))
+  {
+    size_t peekLen;
+    const char* peek = compressed->Peek(&peekLen);
+    const size_t len = peekLen < available ? peekLen : available;
+
+    for (available = 0; available < len; ++available)
+    {
+      source->WriteByte(peek[available]);
+    }
+
+    compressed->Skip(len);
+  }
+
+  source->Seek(0, System::IO::SeekOrigin::Begin);
+  array<System::Byte>^ uncompressed_gcnew;
+
+  try
+  {
+    uncompressed_gcnew = Snappy::Core::Uncompress(source);
+  }
+  catch (System::Exception^ exc)
+  {
+    //System::Console::WriteLine("{0} {1} Exception: {2}", __FUNCTION__, __LINE__, exc->Message);
+    return false;
+  }
+
+  for (int i = 0, count = uncompressed_gcnew->Length; i < count; ++i)
+  {
+    uncompressed[i] = uncompressed_gcnew[i];
+  }
+#else
   SnappyArrayWriter output(uncompressed);
   return InternalUncompress(compressed, &output);
+#endif
 }
 
 bool Uncompress(const char* compressed, size_t compressed_length,
@@ -1875,7 +2068,7 @@ bool Uncompress(const char* compressed, size_t compressed_length,
   return RawUncompress(compressed, compressed_length,
                        string_as_array(uncompressed));
 }
-
+#if !defined(SNAPPY_CLI)
 // A Writer that drops everything on the floor and just does validation
 class SnappyDecompressionValidator {
  private:
@@ -1918,16 +2111,74 @@ class SnappyDecompressionValidator {
   }
   inline void Flush() {}
 };
-
+#endif
 bool IsValidCompressedBuffer(const char* compressed, size_t compressed_length) {
+#if SNAPPY_CLI
+  System::IO::MemoryStream^ source = gcnew System::IO::MemoryStream();
+
+  for (size_t i = 0; i < compressed_length; ++i)
+  {
+    source->WriteByte(compressed[i]);
+  }
+
+  source->Seek(0, System::IO::SeekOrigin::Begin);
+  array<System::Byte>^ uncompressed_gcnew;
+
+  try
+  {
+    uncompressed_gcnew = Snappy::Core::Uncompress(source);
+  }
+  catch (System::Exception^ exc)
+  {
+    //System::Console::WriteLine("{0} {1} Exception: {2}", __FUNCTION__, __LINE__, exc->Message);
+    return false;
+  }
+
+  return true;
+#else
   ByteArraySource reader(compressed, compressed_length);
   SnappyDecompressionValidator writer;
   return InternalUncompress(&reader, &writer);
+#endif
 }
 
 bool IsValidCompressed(Source* compressed) {
+#if SNAPPY_CLI
+  size_t available;
+  System::IO::MemoryStream^ source = gcnew System::IO::MemoryStream();
+
+  while (0 < (available = compressed->Available()))
+  {
+    size_t peekLen;
+    const char* peek = compressed->Peek(&peekLen);
+    const size_t len = peekLen < available ? peekLen : available;
+
+    for (available = 0; available < len; ++available)
+    {
+      source->WriteByte(peek[available]);
+    }
+
+    compressed->Skip(len);
+  }
+
+  source->Seek(0, System::IO::SeekOrigin::Begin);
+  array<System::Byte>^ uncompressed_gcnew;
+
+  try
+  {
+    uncompressed_gcnew = Snappy::Core::Uncompress(source);
+  }
+  catch (System::Exception^ exc)
+  {
+    //System::Console::WriteLine("{0} {1} Exception: {2}", __FUNCTION__, __LINE__, exc->Message);
+    return false;
+  }
+
+  return true;
+#else
   SnappyDecompressionValidator writer;
   return InternalUncompress(compressed, &writer);
+#endif
 }
 
 void RawCompress(const char* input, size_t input_length, char* compressed,
@@ -1951,7 +2202,7 @@ size_t Compress(const char* input, size_t input_length,
   compressed->resize(compressed_length);
   return compressed_length;
 }
-
+#if !defined(SNAPPY_CLI)
 // -----------------------------------------------------------------------
 // Sink interface
 // -----------------------------------------------------------------------
@@ -2188,8 +2439,49 @@ size_t UncompressAsMuchAsPossible(Source* compressed, Sink* uncompressed) {
   InternalUncompress(compressed, &writer);
   return writer.Produced();
 }
-
+#endif
 bool Uncompress(Source* compressed, Sink* uncompressed) {
+#if SNAPPY_CLI
+  size_t available;
+  System::IO::MemoryStream^ source = gcnew System::IO::MemoryStream();
+
+  while (0 < (available = compressed->Available()))
+  {
+    size_t peekLen;
+    const char* peek = compressed->Peek(&peekLen);
+    const size_t len = peekLen < available ? peekLen : available;
+
+    for (available = 0; available < len; ++available)
+    {
+      source->WriteByte(peek[available]);
+    }
+
+    compressed->Skip(len);
+  }
+
+  source->Seek(0, System::IO::SeekOrigin::Begin);
+  array<System::Byte>^ uncompressed_gcnew;
+
+  try
+  {
+    uncompressed_gcnew = Snappy::Core::Uncompress(source);
+  }
+  catch (System::Exception^ exc)
+  {
+    //System::Console::WriteLine("{0} {1} Exception: {2}", __FUNCTION__, __LINE__, exc->Message);
+    return false;
+  }
+
+  std::string output(uncompressed_gcnew->Length, 0);
+
+  for (int i = 0, count = uncompressed_gcnew->Length; i < count; ++i)
+  {
+    output[i] = uncompressed_gcnew[i];
+  }
+
+  uncompressed->Append(output.c_str(), output.size());
+  return true;
+#else
   // Read the uncompressed length from the front of the compressed input
   SnappyDecompressor decompressor(compressed);
   uint32_t uncompressed_len = 0;
@@ -2217,6 +2509,7 @@ bool Uncompress(Source* compressed, Sink* uncompressed) {
     return InternalUncompressAllTags(&decompressor, &writer, compressed_len,
                                      uncompressed_len);
   }
+#endif
 }
 
 }  // namespace snappy

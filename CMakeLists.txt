@@ -27,7 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 cmake_minimum_required(VERSION 3.1)
-project(Snappy VERSION 1.1.9 LANGUAGES C CXX)
+project(Snappy VERSION 1.1.9 LANGUAGES C CXX CSharp)
 
 # C++ standard can be overridden when this is used as a sub-project.
 if(NOT CMAKE_CXX_STANDARD)
@@ -257,6 +257,21 @@ target_compile_definitions(snappy PRIVATE -DHAVE_CONFIG_H)
 if(BUILD_SHARED_LIBS)
   set_target_properties(snappy PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif(BUILD_SHARED_LIBS)
+
+if(SNAPPY_CLI)
+  target_compile_definitions(snappy PUBLIC -DSNAPPY_CLI)
+  set_target_properties(snappy PROPERTIES COMPILE_FLAGS "/GR")
+  set_target_properties(snappy PROPERTIES COMMON_LANGUAGE_RUNTIME "")
+  set_property(TARGET snappy PROPERTY VS_GLOBAL_CLRSupport "true")
+
+  include(CSharpUtilities)
+
+  add_library(snappy.clr SHARED "snappy.cs")
+
+  set_target_properties(snappy.clr PROPERTIES VS_DOTNET_REFERENCES "System")
+  set_target_properties(snappy PROPERTIES VS_DOTNET_REFERENCES snappy.clr)
+  add_dependencies(snappy snappy.clr)
+endif()
 
 if(SNAPPY_BUILD_TESTS OR SNAPPY_BUILD_BENCHMARKS)
   add_library(snappy_test_support "")
