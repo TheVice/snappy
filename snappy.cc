@@ -60,7 +60,11 @@
 #include <string>
 #include <utility>
 #include <vector>
-
+#if defined(SNAPPY_RUNNER)
+#include <fstream>
+#include <sstream>
+// #include <iostream>
+#endif
 namespace snappy {
 
 namespace {
@@ -655,7 +659,71 @@ static inline char* EmitCopy(char* op, size_t offset, size_t len) {
   }
 }
 
+#if defined(SNAPPY_RUNNER)
+std::string PathToTempFile()
+{
+  std::string temp_file_name(L_tmpnam_s, '\0');
+
+  if (0 != tmpnam_s(&temp_file_name[0], L_tmpnam_s))
+  {
+    temp_file_name.clear();
+  }
+  else
+  {
+    auto pos = temp_file_name.find('\0', 0);
+
+    if (std::string::npos != pos)
+    {
+      temp_file_name.resize(pos);
+    }
+  }
+
+  return temp_file_name;
+}
+#endif
+
 bool GetUncompressedLength(const char* start, size_t n, size_t* result) {
+#if defined(SNAPPY_RUNNER)
+  static const auto input_path = PathToTempFile();
+  static const auto output_path = PathToTempFile();
+  //
+  std::string command = "dotnet ";
+  command += SNAPPY_RUNNER;
+  command += " ";
+  command += "GetUncompressedLength";
+  command += " \"";
+  command += input_path;
+  command += "\" \"";
+  command += output_path;
+  command += "\"";
+  {
+    std::string file_content(start, n);
+    std::ofstream file_stream(input_path, std::ios::binary);
+    //
+    std::copy(
+      file_content.cbegin(), file_content.cend(),
+      std::ostreambuf_iterator<char>(file_stream));
+  }
+  bool return_;
+  std::system(command.c_str());
+  {
+    std::string file_content;
+    std::ifstream file_stream(output_path, std::ios::binary);
+    //
+    std::copy(
+      std::istreambuf_iterator<char>(file_stream),
+      std::istreambuf_iterator<char>(),
+      std::back_inserter(file_content));
+    //
+    std::stringstream sstream(file_content);
+    //
+    sstream >> return_;
+    size_t result_;
+    sstream >> result_;
+    *result = result_;
+  }
+  return return_;
+#else
   uint32_t v = 0;
   const char* limit = start + n;
   if (Varint::Parse32WithLimit(start, limit, &v) != NULL) {
@@ -664,6 +732,7 @@ bool GetUncompressedLength(const char* start, size_t n, size_t* result) {
   } else {
     return false;
   }
+#endif
 }
 
 namespace {

@@ -37,17 +37,17 @@ jobs:
     name:  >-
       CI
       ${{ matrix.os }}
-      ${{ matrix.cpu_level }}
       ${{ matrix.compiler }}
-      ${{ matrix.optimized && 'release' || 'debug' }}
+      ${{ matrix.net }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         compiler: [clang, gcc, msvc]
         os: [ubuntu-latest, macos-latest, windows-latest]
-        cpu_level: [baseline, avx, avx2]
-        optimized: [true, false]
+        cpu_level: [baseline]
+        optimized: [true]
+        net: [3.1]
         exclude:
         # MSVC only works on Windows.
         - os: ubuntu-latest
@@ -66,6 +66,9 @@ jobs:
           compiler: clang
         - os: windows-latest
           compiler: gcc
+        # Not testing with clang on Ubuntu.
+        - os: ubuntu-latest
+          compiler: clang
         include:
         - compiler: clang
           CC: clang
@@ -93,11 +96,23 @@ jobs:
         startsWith(matrix.os, 'windows') && '{0}\build\{1}\' || '{0}/build/',
         github.workspace,
         matrix.optimized && 'RelWithDebInfo' || 'Debug') }}
+      SNAPPY_RUNNER: >-
+        ${{ format(
+        startsWith(matrix.os, 'windows') && '{0}\net{1}\bin\Release\netcoreapp{1}\snappy_runner.dll' || '{0}/net{1}/bin/Release/netcoreapp{1}/snappy_runner.dll', github.workspace, matrix.net) }}
+      SNAPPY_RUNNER_LOCATION: >-
+        ${{ format(
+        startsWith(matrix.os, 'windows') && '{0}\net{1}' || '{0}/net{1}', github.workspace, matrix.net) }}
 
     steps:
     - uses: actions/checkout@v2
       with:
         submodules: true
+
+    - name: Build runner
+      run: |
+        dotnet build /p:Configuration=Release
+        cd ${{ env.SNAPPY_RUNNER_LOCATION }}
+        dotnet build /p:Configuration=Release
 
     - name: Generate build config
       run: >-
@@ -107,6 +122,7 @@ jobs:
         -DSNAPPY_FUZZING_BUILD=${{ env.SNAPPY_FUZZING_BUILD }}
         -DSNAPPY_REQUIRE_AVX=${{ env.SNAPPY_REQUIRE_AVX }}
         -DSNAPPY_REQUIRE_AVX2=${{ env.SNAPPY_REQUIRE_AVX2 }}
+        -DSNAPPY_RUNNER=${{ env.SNAPPY_RUNNER }}
 
     - name: Build
       run: >-

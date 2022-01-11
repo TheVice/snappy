@@ -258,6 +258,10 @@ if(BUILD_SHARED_LIBS)
   set_target_properties(snappy PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif(BUILD_SHARED_LIBS)
 
+if(SNAPPY_RUNNER)
+  target_compile_definitions(snappy PUBLIC -DSNAPPY_RUNNER="${SNAPPY_RUNNER}")
+endif()
+
 if(SNAPPY_BUILD_TESTS OR SNAPPY_BUILD_BENCHMARKS)
   add_library(snappy_test_support "")
   target_sources(snappy_test_support
