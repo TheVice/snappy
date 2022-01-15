@@ -259,7 +259,71 @@ if(BUILD_SHARED_LIBS)
 endif(BUILD_SHARED_LIBS)
 
 if(SNAPPY_RUNNER)
+  if(CMAKE_HOST_WIN32)
+    file(TO_NATIVE_PATH "${SNAPPY_RUNNER}" SNAPPY_RUNNER)
+    string(REPLACE "\\" "\\\\" SNAPPY_RUNNER "${SNAPPY_RUNNER}")
+  endif()
+
   target_compile_definitions(snappy PUBLIC -DSNAPPY_RUNNER="${SNAPPY_RUNNER}")
+
+  add_library(sqlite_wrapper "")
+  target_sources(sqlite_wrapper
+    PRIVATE
+      "sqlite_wrapper.cc"
+      "sqlite_wrapper.h"
+      "third_party/sqlite/sqlite3.c"
+      "third_party/sqlite/sqlite3.h"
+  )
+  target_include_directories(sqlite_wrapper
+    PRIVATE "third_party/sqlite"
+  )
+  add_library(ant4c "")
+  target_sources(ant4c
+    PRIVATE
+      "third_party/ant4c/buffer.c"
+      "third_party/ant4c/buffer.h"
+      "third_party/ant4c/environment.c"
+      "third_party/ant4c/environment.h"
+      "third_party/ant4c/file_system.c"
+      "third_party/ant4c/file_system.h"
+      "third_party/ant4c/path.c"
+      "third_party/ant4c/path.h"
+      "third_party/ant4c/range.c"
+      "third_party/ant4c/range.h"
+      "third_party/ant4c/stdc_secure_api.h"
+      "third_party/ant4c/string_unit.c"
+      "third_party/ant4c/string_unit.h"
+      "third_party/ant4c/text_encoding.c"
+      "third_party/ant4c/text_encoding.h"
+      "path_wrapper.cc"
+      "path_wrapper.h"
+  )
+  target_include_directories(ant4c
+    PRIVATE "third_party/ant4c"
+  )
+  target_link_libraries(snappy INTERFACE ant4c sqlite_wrapper)
+
+  if(SNAPPY_INSTALL)
+    install(TARGETS ant4c sqlite_wrapper
+      EXPORT SnappyTargets
+      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+  endif()
+
+  find_library(DL_LIB dl)
+  find_library(PTHREAD_LIB pthread)
+
+  if("DL_LIB-NOTFOUND" STREQUAL DL_LIB)
+    set(DL_LIB "")
+  endif()
+
+  if("PTHREAD_LIB-NOTFOUND" STREQUAL PTHREAD_LIB)
+    set(PTHREAD_LIB "")
+  endif()
+
+  target_link_libraries(sqlite_wrapper INTERFACE ${DL_LIB} ${PTHREAD_LIB})
 endif()
 
 if(SNAPPY_BUILD_TESTS OR SNAPPY_BUILD_BENCHMARKS)
