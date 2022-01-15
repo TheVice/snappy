@@ -149,3 +149,16 @@ jobs:
 
     - name: Test CMake installation
       run: cmake --build "${{ env.CMAKE_BUILD_DIR }}" --target install
+
+    - name: Upload binaries
+      uses: actions/upload-artifact@v2.3.1
+      with:
+        # Artifact name
+        name: ${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.net }}
+
+        # A file, directory or wildcard pattern that describes what to upload
+        path: ${{ github.workspace }}/*.sqlite3
+
+        # Duration after which artifact will expire in days. 0 means using default retention.
+        # Minimum 1 day. Maximum 90 days unless changed from the repository settings page.
+        retention-days: 1
