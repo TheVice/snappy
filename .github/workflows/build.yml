@@ -79,12 +79,19 @@ jobs:
         - compiler: msvc
           CC:
           CXX:
+        - os: macos-latest
+          file_number: 0
+        - os: ubuntu-latest
+          file_number: 1
+        - os: windows-latest
+          file_number: 2
 
     env:
       CMAKE_BUILD_DIR: ${{ github.workspace }}/build
       CMAKE_BUILD_TYPE: ${{ matrix.optimized && 'RelWithDebInfo' || 'Debug' }}
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
+      file_number: ${{ matrix.file_number }}
       SNAPPY_REQUIRE_AVX: ${{ matrix.cpu_level == 'baseline' && '0' || '1' }}
       SNAPPY_REQUIRE_AVX2: ${{ matrix.cpu_level == 'avx2' && '1' || '0' }}
       SNAPPY_FUZZING_BUILD: >-
@@ -107,6 +114,15 @@ jobs:
     - uses: actions/checkout@v2
       with:
         submodules: true
+
+    - name: Uncompress pack with data bases
+      run: zstd -d pack.comp -o pack
+
+    - name: Unpack data base
+      run: |
+        cd ${{ github.workspace }}/packer
+        dotnet build /p:Configuration=Release /p:TargetFrameworks=netcoreapp3.1
+        dotnet ${{ github.workspace }}/packer/bin/Release/netcoreapp3.1/packer.dll unpack ${{ github.workspace }}/pack ${{ env.file_number }} ${{ github.workspace }}/snappy.cc.sqlite3
 
     - name: Build runner
       run: |
@@ -150,15 +166,15 @@ jobs:
     - name: Test CMake installation
       run: cmake --build "${{ env.CMAKE_BUILD_DIR }}" --target install
 
-    - name: Upload binaries
-      uses: actions/upload-artifact@v2.3.1
-      with:
-        # Artifact name
-        name: ${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.net }}
+    # - name: Upload binaries
+    #   uses: actions/upload-artifact@v2.3.1
+    #   with:
+    #     # Artifact name
+    #     name: ${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.net }}
 
-        # A file, directory or wildcard pattern that describes what to upload
-        path: ${{ github.workspace }}/*.sqlite3
+    #     # A file, directory or wildcard pattern that describes what to upload
+    #     path: ${{ github.workspace }}/*.sqlite3
 
-        # Duration after which artifact will expire in days. 0 means using default retention.
-        # Minimum 1 day. Maximum 90 days unless changed from the repository settings page.
-        retention-days: 1
+    #     # Duration after which artifact will expire in days. 0 means using default retention.
+    #     # Minimum 1 day. Maximum 90 days unless changed from the repository settings page.
+    #     retention-days: 1
