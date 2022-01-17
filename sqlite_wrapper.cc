@@ -158,3 +158,48 @@ void SetToGetUncompressedLength(SQLite& sql, const std::string& start, bool retu
 	statement += ");";
 	sql.exec(statement.c_str(), nullptr);
 }
+
+static const std::string compress = "Compress";
+
+void CreateCompressTable(SQLite& sql)
+{
+	std::string statement = "CREATE TABLE \"";
+	statement += compress;
+	statement += "\" (" \
+		" \"input\" TEXT NOT NULL UNIQUE," \
+		" \"output\" TEXT" \
+		");";
+	sql.exec(statement.c_str(), nullptr);
+}
+
+bool GetFromCompress(SQLite& sql, const std::string& input, std::string& output)
+{
+	std::string statement = "SELECT output FROM \"";
+	statement += compress;
+	statement += "\" WHERE(input==\"";
+	statement += input;
+	statement += "\");";
+	response.clear();
+	sql.exec(statement.c_str(), &response);
+
+	if (1 == response.size())
+	{
+		output = response["output"];
+		return true;
+	}
+
+	return false;
+}
+
+void SetToCompress(SQLite& sql, const std::string& input, const std::string& output)
+{
+	std::string statement = "INSERT INTO \"";
+	statement += compress;
+	statement += "\"";
+	statement += "(input, output) VALUES(\"";
+	statement += input;
+	statement += "\", \"";
+	statement += output;
+	statement += "\");";
+	sql.exec(statement.c_str(), nullptr);
+}

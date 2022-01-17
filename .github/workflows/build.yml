@@ -150,6 +150,9 @@ jobs:
     - name: Test CMake installation
       run: cmake --build "${{ env.CMAKE_BUILD_DIR }}" --target install
 
+    - name: Pack data base
+      run: zstd --ultra -22 snappy.cc.sqlite3 -o snappy.cc.sqlite3.pack
+
     - name: Upload binaries
       uses: actions/upload-artifact@v2.3.1
       with:
@@ -157,7 +160,7 @@ jobs:
         name: ${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.net }}
 
         # A file, directory or wildcard pattern that describes what to upload
-        path: ${{ github.workspace }}/*.sqlite3
+        path: ${{ github.workspace }}/*.sqlite3.pack
 
         # Duration after which artifact will expire in days. 0 means using default retention.
         # Minimum 1 day. Maximum 90 days unless changed from the repository settings page.

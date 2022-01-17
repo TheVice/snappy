@@ -39,4 +39,8 @@ void CreateGetUncompressedLengthTable(SQLite& sql);
 bool GetFromGetUncompressedLength(SQLite& sql, const std::string& start, bool& return_, size_t& result_);
 void SetToGetUncompressedLength(SQLite& sql, const std::string& start, bool return_, size_t result_);
 
+void CreateCompressTable(SQLite& sql);
+bool GetFromCompress(SQLite& sql, const std::string& input, std::string& output);
+void SetToCompress(SQLite& sql, const std::string& input, const std::string& output);
+
 #endif

@@ -162,7 +162,7 @@ uint8_t environment_get_variable(const uint8_t* variable_name_start, const uint8
 	}
 
 	ptrdiff_t length = strlen(value);
-	return buffer_resize(variable, size) && buffer_append(variable, value, length);
+	return buffer_resize(variable, size) && buffer_append(variable, (const uint8_t*)value, length);
 }
 
 #endif

@@ -11,9 +11,9 @@ using System.Collections.Generic;
 
 namespace Snappy
 {
-    static class Misc
+    public static class Misc
     {
-        internal static bool[] ByteToBits(byte input)
+        public static bool[] ByteToBits(byte input)
         {
             byte i = 0;
             var output = new bool[8];
@@ -28,7 +28,7 @@ namespace Snappy
             return output;
         }
 
-        internal static bool[] UInt64ToBin(ulong input)
+        public static bool[] UInt64ToBin(ulong input)
         {
             byte i = 0;
             var output = new bool[64];
@@ -43,7 +43,7 @@ namespace Snappy
             return output;
         }
 
-        internal static ulong BinToUInt64(bool[] input, int index, int length)
+        public static ulong BinToUInt64(bool[] input, int index, int length)
         {
             var count = index + length;
 
@@ -68,24 +68,48 @@ namespace Snappy
             return output;
         }
 
-        internal static ulong BinToUInt64(bool[] input)
+        public static ulong BinToUInt64(bool[] input)
         {
             return BinToUInt64(input, 0, input.Length);
         }
+
+        internal static uint CopyTo(Stream input, uint count, Stream output)
+        {
+            var buffer = new byte[4096];
+
+            for (uint i = 0; i < count; i += (uint)buffer.Length)
+            {
+                var length = count - i;
+
+                if (buffer.Length < length)
+                {
+                    length = (uint)buffer.Length;
+                }
+
+                if (length != input.Read(buffer, 0, (int)length))
+                {
+                    return i;
+                }
+
+                output.Write(buffer, 0, (int)length);
+            }
+
+            return count;
+        }
     }
 
-    static class Varints
+    public static class Varints
     {
         static byte[] data = new byte[8];
 
-        internal static bool[] FromVarints(byte[] input, int length)
+        public static bool[] FromVarints(byte[] input, int length)
         {
             var output = new bool[7];
             bool[] input_in_a_bin = null;
 
             for (byte i = 0; i < length; ++i)
             {
-                if (32 < 7 * (i + 1))
+                if (35 < 7 * (i + 1))
                 {
                     return null;
                 }
@@ -119,10 +143,15 @@ namespace Snappy
                 return null;
             }
 
+            if (uint.MaxValue < Misc.BinToUInt64(output))
+            {
+                return null;
+            }
+
             return output;
         }
 
-        internal static bool[] Read(Stream input)
+        public static bool[] Read(Stream input)
         {
             int byte_data;
             byte i = 0;
@@ -145,7 +174,7 @@ namespace Snappy
             return FromVarints(data, i);
         }
 
-        internal static bool[] ToVarints(bool[] input)
+        public static bool[] ToVarints(bool[] input)
         {
             var count = (byte)input.Length;
 
@@ -184,7 +213,7 @@ namespace Snappy
             return output;
         }
 
-        internal static void Write(bool[] input, Stream output)
+        public static void Write(bool[] input, Stream output)
         {
             var output_data = ToVarints(input);
 
@@ -506,6 +535,7 @@ namespace Snappy
         internal void CopyTo(long index, uint count, Stream output)
         {
             stream.Seek(index, SeekOrigin.Begin);
+            //Misc.CopyTo(stream, count, output);
             var buffer = new byte[4096];
 
             for (uint i = 0; i < count; i += (uint)buffer.Length)
@@ -843,30 +873,6 @@ namespace Snappy
             return uncompressed;
         }
 
-        static int CopyTo(Stream input, int count, Stream output)
-        {
-            var buffer = new byte[4096];
-
-            for (int i = 0; i < count; i += buffer.Length)
-            {
-                var length = count - i;
-
-                if (buffer.Length < length)
-                {
-                    length = buffer.Length;
-                }
-
-                if (length != input.Read(buffer, 0, length))
-                {
-                    return i;
-                }
-
-                output.Write(buffer, 0, length);
-            }
-
-            return count;
-        }
-
         public static uint UncompressAsMuchAsPossible(Stream compressed, Stream uncompressed)
         {
             var uncompressed_length_data = Varints.Read(compressed);
@@ -937,7 +943,7 @@ namespace Snappy
                 }
                 else
                 {
-                    if (data_offset_4 != CopyTo(compressed, (int)data_offset_4, uncompressed))
+                    if (data_offset_4 != Misc.CopyTo(compressed, data_offset_4, uncompressed))
                     {
                         return length;
                     }
