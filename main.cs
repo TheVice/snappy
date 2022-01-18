@@ -75,8 +75,21 @@ namespace SnappyRunner
             {
                 using (var input = File.OpenRead(input_path))
                 {
-                    var result = Core.Uncompress(input);
-                    output.Write(result, 0, result.Length);
+                    byte[] result;
+
+                    try
+                    {
+                        result = Core.Uncompress(input);
+                    }
+                    catch
+                    {
+                        result = null;
+                    }
+
+                    if (null != result)
+                    {
+                        output.Write(result, 0, result.Length);
+                    }
                 }
             }
         }

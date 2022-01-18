@@ -15,16 +15,12 @@ namespace Snappy
         static void Pack(string[] inputs, string output)
         {
             long totalLength = 0;
-            var streams = new MemoryStream[inputs.Length];
 
-            for (var i = 0; i < inputs.Length; ++i)
+            foreach (var input in inputs)
             {
-                using (var reader = File.OpenRead(inputs[i]))
+                using (var reader = File.OpenRead(input))
                 {
                     totalLength += reader.Length;
-                    streams[i] = new MemoryStream();
-                    Literal.Write((uint)reader.Length, streams[i]);
-                    reader.CopyTo(streams[i]);
                 }
             }
 
@@ -32,11 +28,13 @@ namespace Snappy
             {
                 Varints.Write(Misc.UInt64ToBin((ulong)totalLength), writer);
 
-                for (var i = 0; i < inputs.Length; ++i)
+                foreach (var input in inputs)
                 {
-                    streams[i].Seek(0, SeekOrigin.Begin);
-                    streams[i].CopyTo(writer);
-                    streams[i].Dispose();
+                    using (var reader = File.OpenRead(input))
+                    {
+                        Literal.Write((uint)reader.Length, writer);
+                        reader.CopyTo(writer);
+                    }
                 }
             }
         }

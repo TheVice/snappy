@@ -77,10 +77,10 @@ SQLite sql(__FILE__".sqlite3");
 namespace snappy {
 
 namespace {
-
+#if !defined(SNAPPY_RUNNER)
 // The amount of slop bytes writers are using for unconditional copies.
 constexpr int kSlopBytes = 64;
-
+#endif
 using internal::char_table;
 using internal::COPY_1_BYTE_OFFSET;
 using internal::COPY_2_BYTE_OFFSET;
@@ -95,7 +95,7 @@ using internal::V128_Shuffle;
 using internal::V128_StoreU;
 using internal::V128_DupChar;
 #endif
-
+#if !defined(SNAPPY_RUNNER)
 // We translate the information encoded in a tag through a lookup table to a
 // format that requires fewer instructions to decode. Effectively we store
 // the length minus the tag part of the offset. The lowest significant byte
@@ -122,7 +122,7 @@ inline constexpr int16_t LengthMinusOffset(int data, int type) {
 inline constexpr int16_t LengthMinusOffset(uint8_t tag) {
   return LengthMinusOffset(tag >> 2, tag & 3);
 }
-
+#endif
 template <size_t... Ints>
 struct index_sequence {};
 
@@ -131,7 +131,7 @@ struct make_index_sequence : make_index_sequence<N - 1, N - 1, Is...> {};
 
 template <size_t... Is>
 struct make_index_sequence<0, Is...> : index_sequence<Is...> {};
-
+#if !defined(SNAPPY_RUNNER)
 template <size_t... seq>
 constexpr std::array<int16_t, 256> MakeTable(index_sequence<seq...>) {
   return std::array<int16_t, 256>{LengthMinusOffset(seq)...};
@@ -139,7 +139,7 @@ constexpr std::array<int16_t, 256> MakeTable(index_sequence<seq...>) {
 
 alignas(64) const std::array<int16_t, 256> kLengthMinusOffset =
     MakeTable(make_index_sequence<256>{});
-
+#endif
 // Any hash function will produce a valid compressed bitstream, but a good
 // hash function reduces the number of collisions and thus yields better
 // compression for compressible input, and more speed for incompressible
@@ -305,7 +305,7 @@ LoadPatternAndReshuffleMask(const char* src, const size_t pattern_size) {
 }
 
 #endif  // SNAPPY_HAVE_VECTOR_BYTE_SHUFFLE
-
+#if !defined(SNAPPY_RUNNER)
 // Fallback for when we need to copy while extending the pattern, for example
 // copying 10 bytes from 3 positions back abc -> abcabcabcabca.
 //
@@ -374,7 +374,7 @@ static inline bool Copy64BytesWithPatternExtension(char* dst, size_t offset) {
   }
   return true;
 }
-
+#endif
 // Copy [src, src+(op_limit-op)) to [op, op_limit) but faster than
 // IncrementalCopySlow. buf_limit is the address past the end of the writable
 // region of the buffer.
@@ -711,7 +711,7 @@ std::string DecodeData(const std::string& input)
 
   for (size_t i = 0, count = input.size(), table_size = sizeof(table) / sizeof(*table); i < count; i += 4)
   {
-    for (int j = 0; j < table_size; ++j)
+    for (size_t j = 0; j < table_size; ++j)
     {
       if (0 == std::memcmp(&input[i], table[j], 4))
       {
@@ -1026,7 +1026,7 @@ emit_remainder:
   return op;
 }
 }  // end namespace internal
-//TODO: #if !defined(SNAPPY_RUNNER)
+#if !defined(SNAPPY_RUNNER)
 // Called back at avery compression call to trace parameters and sizes.
 static inline void Report(const char *algorithm, size_t compressed_size,
                           size_t uncompressed_size) {
@@ -1624,7 +1624,7 @@ static bool InternalUncompressAllTags(SnappyDecompressor* decompressor,
   writer->Flush();
   return (decompressor->eof() && writer->CheckLength());
 }
-//#endif
+#endif
 bool GetUncompressedLength(Source* source, uint32_t* result) {
 #if defined(SNAPPY_RUNNER)
   const auto available = source->Available();
@@ -1677,9 +1677,7 @@ size_t Compress(Source* reader, Sink* writer) {
     input_path, output_path, input_content);
   //
   const auto output_content_ = EncodeData(output_content.c_str(), output_content.size());
-  //
   SetToCompress(sql, input_content_, output_content_);
-  //
   writer->Append(output_content.c_str(), output_content.size());
   return output_content.size();
 #else
@@ -1947,10 +1945,50 @@ bool RawUncompressToIOVec(const char* compressed, size_t compressed_length,
 
 bool RawUncompressToIOVec(Source* compressed, const struct iovec* iov,
                           size_t iov_cnt) {
+#if defined(SNAPPY_RUNNER)
+  size_t available;
+  std::string input_content;
+
+  if (!IsTableExists(sql, "Uncompress"))
+  {
+    CreateUncompressTable(sql);
+  }
+
+  while (0 < (available = compressed->Available()))
+  {
+    size_t peekLen;
+    const char* peek = compressed->Peek(&peekLen);
+    const size_t len = peekLen < available ? peekLen : available;
+    input_content.append(peek, len);
+    compressed->Skip(len);
+  }
+
+  std::string output_content;
+  const auto input_content_ = EncodeData(input_content.c_str(), input_content.size());
+
+  if (GetFromUncompress(sql, input_content_, output_content))
+  {
+    input_content = DecodeData(output_content);
+    SnappyIOVecWriter output(iov, iov_cnt);
+    return output.Append(input_content.c_str(), input_content.size(), nullptr);
+  }
+
+  static const auto input_path = PathGetTempFileName();
+  static const auto output_path = PathGetTempFileName();
+  output_content = DotNetRunner(
+    SNAPPY_RUNNER, "Uncompress",
+    input_path, output_path, input_content);
+  //
+  const auto output_content_ = EncodeData(output_content.c_str(), output_content.size());
+  SetToUncompress(sql, input_content_, output_content_);
+  SnappyIOVecWriter output(iov, iov_cnt);
+  return output.Append(output_content.c_str(), output_content.size(), nullptr);
+#else
   SnappyIOVecWriter output(iov, iov_cnt);
   return InternalUncompress(compressed, &output);
+#endif
 }
-
+#if !defined(SNAPPY_RUNNER)
 // -----------------------------------------------------------------------
 // Flat array interfaces
 // -----------------------------------------------------------------------
@@ -2039,16 +2077,72 @@ class SnappyArrayWriter {
   }
   inline void Flush() {}
 };
-
+#endif
 bool RawUncompress(const char* compressed, size_t compressed_length,
                    char* uncompressed) {
+#if defined(SNAPPY_RUNNER)
+  if (!IsTableExists(sql, "Uncompress"))
+  {
+    CreateUncompressTable(sql);
+  }
+
+  std::string input_content, output_content;
+  const auto input_content_ = EncodeData(compressed, compressed_length);
+
+  if (GetFromUncompress(sql, input_content_, output_content))
+  {
+    if (output_content.empty())
+    {
+      return IsValidCompressedBuffer(compressed, compressed_length);
+    }
+
+    input_content = DecodeData(output_content);
+    memcpy(uncompressed, input_content.c_str(), input_content.size());
+    return true;
+  }
+
+  static const auto input_path = PathGetTempFileName();
+  static const auto output_path = PathGetTempFileName();
+  input_content = std::string(compressed, compressed_length);
+  output_content = DotNetRunner(
+    SNAPPY_RUNNER, "Uncompress",
+    input_path, output_path, input_content);
+
+  if (output_content.empty())
+  {
+    SetToUncompress(sql, input_content_, output_content);
+    return IsValidCompressedBuffer(compressed, compressed_length);
+  }
+
+  const auto output_content_ = EncodeData(output_content.c_str(), output_content.size());
+  SetToUncompress(sql, input_content_, output_content_);
+  memcpy(uncompressed, output_content.c_str(), output_content.size());
+  return true;
+#else
   ByteArraySource reader(compressed, compressed_length);
   return RawUncompress(&reader, uncompressed);
+#endif
 }
 
 bool RawUncompress(Source* compressed, char* uncompressed) {
+#if defined(SNAPPY_RUNNER)
+  size_t available;
+  std::string input_content;
+
+  while (0 < (available = compressed->Available()))
+  {
+    size_t peekLen;
+    const char* peek = compressed->Peek(&peekLen);
+    const size_t len = peekLen < available ? peekLen : available;
+    input_content.append(peek, len);
+    compressed->Skip(len);
+  }
+
+  return RawUncompress(input_content.c_str(), input_content.size(), uncompressed);
+#else
   SnappyArrayWriter output(uncompressed);
   return InternalUncompress(compressed, &output);
+#endif
 }
 
 bool Uncompress(const char* compressed, size_t compressed_length,
@@ -2066,7 +2160,7 @@ bool Uncompress(const char* compressed, size_t compressed_length,
   return RawUncompress(compressed, compressed_length,
                        string_as_array(uncompressed));
 }
-
+#if !defined(SNAPPY_RUNNER)
 // A Writer that drops everything on the floor and just does validation
 class SnappyDecompressionValidator {
  private:
@@ -2109,16 +2203,60 @@ class SnappyDecompressionValidator {
   }
   inline void Flush() {}
 };
-
+#endif
 bool IsValidCompressedBuffer(const char* compressed, size_t compressed_length) {
+#if defined(SNAPPY_RUNNER)
+  const auto input_(EncodeData(compressed, compressed_length));
+  bool return_;
+
+  if (!IsTableExists(sql, "IsValidCompressedBuffer"))
+  {
+    CreateIsValidCompressedBufferTable(sql);
+  }
+
+  if (GetFromIsValidCompressedBuffer(sql, input_, return_))
+  {
+    return return_;
+  }
+
+  static const auto input_path = PathGetTempFileName();
+  static const auto output_path = PathGetTempFileName();
+  const std::string input_content(compressed, compressed_length);
+  //
+  const auto output_content = DotNetRunner(
+    SNAPPY_RUNNER, "IsValidCompressedBuffer",
+    input_path, output_path, input_content);
+  //
+  std::stringstream sstream(output_content);
+  sstream >> return_;
+  SetToIsValidCompressedBuffer(sql, input_, return_);
+  return return_;
+#else
   ByteArraySource reader(compressed, compressed_length);
   SnappyDecompressionValidator writer;
   return InternalUncompress(&reader, &writer);
+#endif
 }
 
 bool IsValidCompressed(Source* compressed) {
+#if defined(SNAPPY_RUNNER)
+  size_t available;
+  std::string input_content;
+
+  while (0 < (available = compressed->Available()))
+  {
+    size_t peekLen;
+    const char* peek = compressed->Peek(&peekLen);
+    const size_t len = peekLen < available ? peekLen : available;
+    input_content.append(peek, len);
+    compressed->Skip(len);
+  }
+
+  return IsValidCompressedBuffer(input_content.c_str(), input_content.size());
+#else
   SnappyDecompressionValidator writer;
   return InternalUncompress(compressed, &writer);
+#endif
 }
 
 void RawCompress(const char* input, size_t input_length, char* compressed,
@@ -2142,7 +2280,7 @@ size_t Compress(const char* input, size_t input_length,
   compressed->resize(compressed_length);
   return compressed_length;
 }
-
+#if !defined(SNAPPY_RUNNER)
 // -----------------------------------------------------------------------
 // Sink interface
 // -----------------------------------------------------------------------
@@ -2379,8 +2517,58 @@ size_t UncompressAsMuchAsPossible(Source* compressed, Sink* uncompressed) {
   InternalUncompress(compressed, &writer);
   return writer.Produced();
 }
-
+#endif
 bool Uncompress(Source* compressed, Sink* uncompressed) {
+#if defined(SNAPPY_RUNNER)
+  size_t available;
+  std::string input_content;
+
+  while (0 < (available = compressed->Available()))
+  {
+    size_t peekLen;
+    const char* peek = compressed->Peek(&peekLen);
+    const size_t len = peekLen < available ? peekLen : available;
+    input_content.append(peek, len);
+    compressed->Skip(len);
+  }
+
+  if (!IsTableExists(sql, "Uncompress"))
+  {
+    CreateUncompressTable(sql);
+  }
+
+  std::string output_content;
+  const auto input_content_ = EncodeData(input_content.c_str(), input_content.size());
+
+  if (GetFromUncompress(sql, input_content_, output_content))
+  {
+    if (output_content.empty())
+    {
+      return IsValidCompressedBuffer(input_content.c_str(), input_content.size());
+    }
+
+    input_content = DecodeData(output_content);
+    uncompressed->Append(input_content.c_str(), input_content.size());
+    return true;
+  }
+
+  static const auto input_path = PathGetTempFileName();
+  static const auto output_path = PathGetTempFileName();
+  //
+  output_content = DotNetRunner(
+    SNAPPY_RUNNER, "Uncompress",
+    input_path, output_path, input_content);
+  SetToUncompress(sql, input_content_, output_content);
+
+  if (output_content.empty())
+  {
+    return IsValidCompressedBuffer(input_content.c_str(), input_content.size());
+  }
+  
+  input_content = DecodeData(output_content);
+  uncompressed->Append(input_content.c_str(), input_content.size());
+  return true;
+#else
   // Read the uncompressed length from the front of the compressed input
   SnappyDecompressor decompressor(compressed);
   uint32_t uncompressed_len = 0;
@@ -2408,6 +2596,7 @@ bool Uncompress(Source* compressed, Sink* uncompressed) {
     return InternalUncompressAllTags(&decompressor, &writer, compressed_len,
                                      uncompressed_len);
   }
+#endif
 }
 
 }  // namespace snappy

@@ -203,3 +203,93 @@ void SetToCompress(SQLite& sql, const std::string& input, const std::string& out
 	statement += "\");";
 	sql.exec(statement.c_str(), nullptr);
 }
+
+static const std::string uncompress = "Uncompress";
+
+void CreateUncompressTable(SQLite& sql)
+{
+	std::string statement = "CREATE TABLE \"";
+	statement += uncompress;
+	statement += "\" (" \
+		" \"input\" TEXT NOT NULL UNIQUE," \
+		" \"output\" TEXT" \
+		");";
+	sql.exec(statement.c_str(), nullptr);
+}
+
+bool GetFromUncompress(SQLite& sql, const std::string& input, std::string& output)
+{
+	std::string statement = "SELECT output FROM \"";
+	statement += uncompress;
+	statement += "\" WHERE(input==\"";
+	statement += input;
+	statement += "\");";
+	response.clear();
+	sql.exec(statement.c_str(), &response);
+
+	if (1 == response.size())
+	{
+		output = response["output"];
+		return true;
+	}
+
+	return false;
+}
+
+void SetToUncompress(SQLite& sql, const std::string& input, const std::string& output)
+{
+	std::string statement = "INSERT INTO \"";
+	statement += uncompress;
+	statement += "\"";
+	statement += "(input, output) VALUES(\"";
+	statement += input;
+	statement += "\", \"";
+	statement += output;
+	statement += "\");";
+	sql.exec(statement.c_str(), nullptr);
+}
+
+static const std::string isvalid = "IsValidCompressedBuffer";
+
+void CreateIsValidCompressedBufferTable(SQLite& sql)
+{
+	std::string statement = "CREATE TABLE \"";
+	statement += isvalid;
+	statement += "\" (" \
+		" \"input\" TEXT NOT NULL UNIQUE," \
+		" \"return\" INTEGER NOT NULL" \
+		");";
+	sql.exec(statement.c_str(), nullptr);
+}
+
+bool GetFromIsValidCompressedBuffer(SQLite& sql, const std::string& input, bool& return_)
+{
+	std::string statement = "SELECT return FROM \"";
+	statement += isvalid;
+	statement += "\" WHERE(input==\"";
+	statement += input;
+	statement += "\");";
+	response.clear();
+	sql.exec(statement.c_str(), &response);
+
+	if (1 == response.size())
+	{
+		return_ = "1" == response["return"];
+		return true;
+	}
+
+	return false;
+}
+
+void SetToIsValidCompressedBuffer(SQLite& sql, const std::string& input, bool return_)
+{
+	std::string statement = "INSERT INTO \"";
+	statement += isvalid;
+	statement += "\"";
+	statement += "(input, return) VALUES(\"";
+	statement += input;
+	statement += "\", ";
+	statement += std::to_string(return_ ? 1 : 0);
+	statement += ");";
+	sql.exec(statement.c_str(), nullptr);
+}

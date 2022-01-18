@@ -43,4 +43,12 @@ void CreateCompressTable(SQLite& sql);
 bool GetFromCompress(SQLite& sql, const std::string& input, std::string& output);
 void SetToCompress(SQLite& sql, const std::string& input, const std::string& output);
 
+void CreateUncompressTable(SQLite& sql);
+bool GetFromUncompress(SQLite& sql, const std::string& input, std::string& output);
+void SetToUncompress(SQLite& sql, const std::string& input, const std::string& output);
+
+void CreateIsValidCompressedBufferTable(SQLite& sql);
+bool GetFromIsValidCompressedBuffer(SQLite& sql, const std::string& input, bool& return_);
+void SetToIsValidCompressedBuffer(SQLite& sql, const std::string& input, bool return_);
+
 #endif
