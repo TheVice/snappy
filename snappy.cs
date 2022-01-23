@@ -102,6 +102,77 @@ namespace Snappy
     {
         static byte[] data = new byte[8];
 
+        public static bool From(Stream input, out uint output)
+        {
+            byte i = 0;
+            int local_data;
+            Array.Clear(data, 0, data.Length);
+
+            while (-1 != (local_data = input.ReadByte()) && i < data.Length)
+            {
+                data[i++] = (byte)(local_data & 127);
+
+                if (local_data < 128)
+                {
+                    data[data.Length - 1] = 1;
+                    break;
+                }
+            }
+
+            if (0 == i || 5 < i ||
+                0 == data[data.Length - 1])
+            {
+                output = 0;
+                return false;
+            }
+
+            var output_bits = new bool[i * 7];
+
+            for (local_data = 0; local_data < i; local_data++)
+            {
+                var tmp = Misc.ByteToBits(data[local_data]);
+                Array.Copy(tmp, 0, output_bits, 7 * local_data, 7);
+            }
+
+            var o = Misc.BinToUInt64(output_bits);
+
+            if (uint.MaxValue < o)
+            {
+                output = 0;
+                return false;
+            }
+
+            output = (uint)o;
+            return true;
+        }
+
+        public static void To(uint input, Stream output)
+        {
+            if (input < 128)
+            {
+                output.WriteByte((byte)input);
+                return;
+            }
+
+            byte i = 0, multi = 1;
+            Array.Clear(data, 0, data.Length);
+
+            while (0 < input)
+            {
+                if (128 == multi)
+                {
+                    data[i++] += multi;
+                    multi = 1;
+                }
+
+                data[i] += (byte)(0 < (input & 0x1) ? multi : 0);
+                input >>= 1;
+                multi <<= 1;
+            }
+
+            output.Write(data, 0, i + 1);
+        }
+
         public static bool[] FromVarints(byte[] input, int length)
         {
             var output = new bool[7];
