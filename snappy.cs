@@ -102,7 +102,7 @@ namespace Snappy
     {
         static byte[] data = new byte[8];
 
-        public static bool From(Stream input, out uint output)
+        public static bool From_(Stream input, out uint output)
         {
             byte i = 0;
             int local_data;
@@ -143,6 +143,76 @@ namespace Snappy
             }
 
             output = (uint)o;
+            return true;
+        }
+
+        public static bool From(Stream input, out uint output)
+        {
+            output = 0;
+            int byte_data;
+            uint multi = 1;
+
+            while (-1 != (byte_data = input.ReadByte()))
+            {
+                if (byte_data < 128)
+                {
+                    while (0 < byte_data)
+                    {
+                        output += 0 < (byte_data & 0x1) ? multi : 0;
+                        byte_data >>= 1;
+
+                        if (0 < byte_data)
+                        {
+                            if (2147483648 == multi)
+                            {
+                                return false;
+                            }
+
+                            multi <<= 1;
+                        }
+                    }
+
+                    byte_data = short.MaxValue;
+                    break;
+                }
+
+                byte count = 7;
+                byte_data &= 127;
+
+                while (0 < byte_data)
+                {
+                    output += 0 < (byte_data & 0x1) ? multi : 0;
+                    byte_data >>= 1;
+
+                    if (0 < byte_data)
+                    {
+                        if (2147483648 == multi)
+                        {
+                            return false;
+                        }
+
+                        multi <<= 1;
+                        --count;
+                    }
+                }
+
+                while (0 < count)
+                {
+                    if (2147483648 == multi)
+                    {
+                        return false;
+                    }
+
+                    multi <<= 1;
+                    --count;
+                }
+            }
+
+            if (short.MaxValue != byte_data)
+            {
+                return false;
+            }
+
             return true;
         }
 
