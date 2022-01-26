@@ -40,7 +40,7 @@ namespace Snappy
 
     public static class Varints
     {
-        static byte[] data = new byte[6];
+        static readonly byte[] data = new byte[6];
 
         public static bool From(Stream input, out uint output)
         {
@@ -146,7 +146,7 @@ namespace Snappy
 
     public static class Literal
     {
-        static byte[] data = new byte[4];
+        static readonly byte[] data = new byte[4];
 
         public static bool Read(byte tag, Stream input, out uint length)
         {
@@ -227,7 +227,7 @@ namespace Snappy
 
     static class RunLength
     {
-        static byte[] data = new byte[byte.MaxValue + 1];
+        static readonly byte[] data = new byte[byte.MaxValue + 1];
 
         internal static byte[] Decoding(byte[] readedData, uint readedDataLength, uint offset, byte length)
         {
@@ -310,7 +310,7 @@ namespace Snappy
 
     public static class BackReference
     {
-        static byte[] data = new byte[4];
+        static readonly byte[] data = new byte[4];
 
         public static bool Read1byteOffset(byte tag, Stream input, out ushort offset, out byte length)
         {
@@ -420,7 +420,7 @@ namespace Snappy
     class StreamByteReader
     {
         int data;
-        Stream stream;
+        readonly Stream stream;
 
         internal StreamByteReader(Stream stream)
         {
@@ -630,7 +630,10 @@ namespace Snappy
         {
             try
             {
-                Uncompress(input);
+                using (var output = new MemoryStream())
+                {
+                    Uncompress(input, output);
+                }
             }
             catch (Exception)
             {
@@ -648,20 +651,18 @@ namespace Snappy
             }
         }
 
-        public static byte[] Uncompress(Stream input)
+        public static void Uncompress(Stream compressed, Stream uncompressed)
         {
-            uint uncompressed_length;
-
-            if (!Varints.From(input, out uncompressed_length))
+            if (!Varints.From(compressed, out uint uncompressed_length))
             {
                 throw new Exception("Incorrect Varint data.");
             }
 
-            var uncompressed = new byte[uncompressed_length];
             uint length = 0;
+            var current_length = uncompressed.Length;
             int tag;
 
-            while (-1 != (tag = input.ReadByte()))
+            while (-1 != (tag = compressed.ReadByte()))
             {
                 var element_type = (byte)(tag & 0x3);
                 ushort data_offset = 0;
@@ -671,28 +672,28 @@ namespace Snappy
                 switch (element_type)
                 {
                     case 0:
-                        if (!Literal.Read((byte)tag, input, out data_offset_4) || 0 == data_offset_4)
+                        if (!Literal.Read((byte)tag, compressed, out data_offset_4) || 0 == data_offset_4)
                         {
                             throw new Exception("Tag byte of literal is incorrect or stream reach the finish that is unexpected.");
                         }
 
                         break;
                     case 1:
-                        if (!BackReference.Read1byteOffset((byte)tag, input, out data_offset, out data_length))
+                        if (!BackReference.Read1byteOffset((byte)tag, compressed, out data_offset, out data_length))
                         {
                             throw new EndOfStreamException();
                         }
 
                         break;
                     case 2:
-                        if (!BackReference.Read2bytesOffset((byte)tag, input, out data_offset, out data_length))
+                        if (!BackReference.Read2bytesOffset((byte)tag, compressed, out data_offset, out data_length))
                         {
                             throw new EndOfStreamException();
                         }
 
                         break;
                     case 3:
-                        if (!BackReference.Read4bytesOffset((byte)tag, input, out data_offset_4, out data_length))
+                        if (!BackReference.Read4bytesOffset((byte)tag, compressed, out data_offset_4, out data_length))
                         {
                             throw new EndOfStreamException();
                         }
@@ -707,7 +708,7 @@ namespace Snappy
                         data_offset_4 = data_offset;
                     }
 
-                    var data = RunLength.Decoding(uncompressed, length, data_offset_4, data_length);
+                    var data = RunLength.Decoding(uncompressed, data_offset_4, data_length);
 
                     if (null == data)
                     {
@@ -715,36 +716,12 @@ namespace Snappy
                         throw new ArgumentOutOfRangeException(message);
                     }
 
-                    if ((uint)uncompressed.Length < length + data_length)
-                    {
-                        var tmp = new byte[length + data_length];
-                        Array.Copy(uncompressed, 0, tmp, 0, uncompressed.Length);
-                        uncompressed = tmp;
-                        uncompressed_length = (uint)uncompressed.Length;
-                    }
-
-#if NETSTANDARD1_1
-                    if (int.MaxValue < length)
-                    {
-                        var message = string.Format("Can not work with index {0} that more than {1} at current environment. Function 'UncompressAsMuchAsPossible' can be used instead.", length, int.MaxValue);
-                        throw new ArgumentOutOfRangeException(message);
-                    }
-
-                    Array.Copy(data, 0, uncompressed, (int)length, data_length);
-#else
-                    Array.Copy(data, 0, uncompressed, length, data_length);
-#endif
+                    uncompressed.Write(data, 0, data_length);
                     length += data_length;
                 }
                 else
                 {
-                    if ((uint)uncompressed.Length < length + data_offset_4)
-                    {
-                        var message = string.Format("Requested length {0} of data more than set at the header {1}.", length + data_offset_4, uncompressed.Length);
-                        throw new ArgumentOutOfRangeException(message);
-                    }
-
-                    if (data_offset_4 != input.Read(uncompressed, (int)length, (int)data_offset_4))
+                    if (data_offset_4 != Misc.CopyTo(compressed, data_offset_4, uncompressed))
                     {
                         throw new EndOfStreamException();
                     }
@@ -754,24 +731,21 @@ namespace Snappy
             }
 
             if (length != uncompressed_length ||
-                -1 != input.ReadByte())
+                length != uncompressed.Length - current_length ||
+                -1 != compressed.ReadByte())
             {
                 throw new InvalidDataException();
             }
-
-            return uncompressed;
         }
 
         public static uint UncompressAsMuchAsPossible(Stream compressed, Stream uncompressed)
         {
-            uint length;
-
-            if (!Varints.From(compressed, out length))
+            if (!Varints.From(compressed, out _))
             {
                 return 0;
             }
 
-            length = 0;
+            uint length = 0;
             int tag;
 
             while (-1 != (tag = compressed.ReadByte()))
