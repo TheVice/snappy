@@ -54,6 +54,10 @@ jobs:
           compiler: msvc
         - os: macos-latest
           compiler: msvc
+        - os: ubuntu-latest
+          compiler: mingw
+        - os: macos-latest
+          compiler: mingw
         # GitHub servers seem to run on pre-Haswell CPUs. Attempting to use AVX2
         # results in crashes.
         - os: macos-latest
@@ -66,6 +70,10 @@ jobs:
           compiler: clang
         - os: windows-latest
           compiler: gcc
+        - compiler: mingw
+          cpu_level: avx
+        - compiler: mingw
+          cpu_level: avx2
         include:
         - compiler: clang
           CC: clang
@@ -74,6 +82,9 @@ jobs:
           CC: gcc
           CXX: g++
         - compiler: msvc
+          CC:
+          CXX:
+        - compiler: mingw
           CC:
           CXX:
 
@@ -90,7 +101,7 @@ jobs:
       BINARY_SUFFIX: ${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
       BINARY_PATH: >-
         ${{ format(
-        startsWith(matrix.os, 'windows') && '{0}\build\{1}\' || '{0}/build/',
+        'msvc' == matrix.compiler && '{0}\build\{1}\' || '{0}/build/',
         github.workspace,
         matrix.optimized && 'RelWithDebInfo' || 'Debug') }}
       GENERATOR: ${{ matrix.compiler == 'mingw' && '-G "MinGW Makefiles"' || '' }}
@@ -114,13 +125,6 @@ jobs:
       run: >-
         cmake --build "${{ env.CMAKE_BUILD_DIR }}"
         --config "${{ env.CMAKE_BUILD_TYPE }}"
-
-    - name: Copy binaries (MinGW)
-      if: ${{ matrix.compiler == 'mingw' }}
-      run: |
-        mkdir ${{ env.BINARY_PATH }}
-        copy ${{ env.CMAKE_BUILD_DIR }}/snappy_unittest${{ env.BINARY_SUFFIX }} ${{ env.BINARY_PATH }}snappy_unittest${{ env.BINARY_SUFFIX }}
-        copy ${{ env.CMAKE_BUILD_DIR }}/snappy_benchmark${{ env.BINARY_SUFFIX }} ${{ env.BINARY_PATH }}snappy_benchmark${{ env.BINARY_SUFFIX }}
 
     - name: Run C++ API Tests
       run: ${{ env.BINARY_PATH }}snappy_unittest${{ env.BINARY_SUFFIX }}
